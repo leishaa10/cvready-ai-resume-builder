@@ -1,0 +1,403 @@
+import { useState } from 'react';
+import { FileText, Briefcase, GraduationCap, Code, Sparkles, Plus, Trash2 } from 'lucide-react';
+
+export default function CVReadyBuilder() {
+  const [activeTab, setActiveTab] = useState('basic');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [formData, setFormData] = useState({
+    name: '', email: '', phone: '', location: '', linkedin: '', jobTitle: '', skills: '', summary: '',
+    experiences: [{ title: '', company: '', start: '', end: '', responsibilities: '' }],
+    education: [{ degree: '', institution: '', year: '' }],
+    projects: [{ name: '', description: '', technologies: '' }]
+  });
+  const [generatedResume, setGeneratedResume] = useState('');
+
+  const handleChange = (field, value) => setFormData({...formData, [field]: value});
+  
+  const addItem = (type) => {
+    const newItem = type === 'experiences' 
+      ? { title: '', company: '', start: '', end: '', responsibilities: '' }
+      : type === 'education' 
+      ? { degree: '', institution: '', year: '' }
+      : { name: '', description: '', technologies: '' };
+    setFormData({...formData, [type]: [...formData[type], newItem]});
+  };
+
+  const updateItem = (type, index, field, value) => {
+    const items = [...formData[type]];
+    items[index][field] = value;
+    setFormData({...formData, [type]: items});
+  };
+
+  const removeItem = (type, index) => {
+    if (formData[type].length > 1) {
+      setFormData({...formData, [type]: formData[type].filter((_, i) => i !== index)});
+    }
+  };
+
+  const generateResume = async () => {
+    setIsGenerating(true);
+    try {
+      const prompt = `Create a professional, ATS-friendly resume in a clean format for:
+
+Name: ${formData.name}
+Email: ${formData.email}
+Phone: ${formData.phone}
+Location: ${formData.location}
+LinkedIn: ${formData.linkedin}
+Target Job Title: ${formData.jobTitle}
+
+Professional Summary: ${formData.summary}
+
+Skills: ${formData.skills}
+
+Work Experience:
+${formData.experiences.map(e => `${e.title} at ${e.company} (${e.start} - ${e.end})
+Responsibilities: ${e.responsibilities}`).join('\n\n')}
+
+Education:
+${formData.education.map(e => `${e.degree}, ${e.institution}, ${e.year}`).join('\n')}
+
+Projects:
+${formData.projects.map(p => `${p.name}
+Description: ${p.description}
+Technologies: ${p.technologies}`).join('\n\n')}
+
+Please format this as a professional resume with clear sections, bullet points for responsibilities, and an engaging professional summary. Make it compelling and ATS-optimized.`;
+
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 4000,
+          messages: [
+            { role: "user", content: prompt }
+          ],
+        })
+      });
+
+      const data = await response.json();
+      const resumeText = data.content
+        .map(item => (item.type === "text" ? item.text : ""))
+        .filter(Boolean)
+        .join("\n");
+      
+      setGeneratedResume(resumeText);
+    } catch (error) {
+      console.error("Error generating resume:", error);
+      setGeneratedResume("Error generating resume. Please try again.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const tabs = [
+    { id: 'basic', label: 'Basic Info', icon: FileText },
+    { id: 'experience', label: 'Experience', icon: Briefcase },
+    { id: 'education', label: 'Education', icon: GraduationCap },
+    { id: 'projects', label: 'Projects', icon: Code }
+  ];
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+      <div className="max-w-7xl mx-auto">
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold text-gray-800 mb-2 flex items-center justify-center gap-2">
+            <Sparkles className="text-indigo-600" /> CVReady
+          </h1>
+          <p className="text-gray-600">AI-Powered Professional Resume Builder</p>
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-6">
+          {/* Left Panel - Input Form */}
+          <div className="bg-white rounded-xl shadow-lg p-6">
+            <div className="flex border-b mb-6 overflow-x-auto">
+              {tabs.map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center gap-2 px-4 py-3 font-medium transition-colors whitespace-nowrap ${
+                    activeTab === tab.id
+                      ? 'border-b-2 border-indigo-600 text-indigo-600'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  <tab.icon size={18} />
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2">
+              {activeTab === 'basic' && (
+                <>
+                  <input
+                    type="text"
+                    placeholder="Full Name"
+                    value={formData.name}
+                    onChange={(e) => handleChange('name', e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                  <input
+                    type="email"
+                    placeholder="Email"
+                    value={formData.email}
+                    onChange={(e) => handleChange('email', e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                  <input
+                    type="tel"
+                    placeholder="Phone"
+                    value={formData.phone}
+                    onChange={(e) => handleChange('phone', e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Location"
+                    value={formData.location}
+                    onChange={(e) => handleChange('location', e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                  <input
+                    type="text"
+                    placeholder="LinkedIn URL"
+                    value={formData.linkedin}
+                    onChange={(e) => handleChange('linkedin', e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Target Job Title"
+                    value={formData.jobTitle}
+                    onChange={(e) => handleChange('jobTitle', e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                  <textarea
+                    placeholder="Professional Summary (brief overview of your career)"
+                    value={formData.summary}
+                    onChange={(e) => handleChange('summary', e.target.value)}
+                    rows="4"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                  <textarea
+                    placeholder="Skills (comma-separated)"
+                    value={formData.skills}
+                    onChange={(e) => handleChange('skills', e.target.value)}
+                    rows="3"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                </>
+              )}
+
+              {activeTab === 'experience' && (
+                <>
+                  {formData.experiences.map((exp, index) => (
+                    <div key={index} className="p-4 border border-gray-200 rounded-lg space-y-3">
+                      <div className="flex justify-between items-center">
+                        <h3 className="font-semibold text-gray-700">Experience {index + 1}</h3>
+                        <button
+                          onClick={() => removeItem('experiences', index)}
+                          className="text-red-500 hover:text-red-700"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Job Title"
+                        value={exp.title}
+                        onChange={(e) => updateItem('experiences', index, 'title', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Company"
+                        value={exp.company}
+                        onChange={(e) => updateItem('experiences', index, 'company', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      />
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="text"
+                          placeholder="Start Date"
+                          value={exp.start}
+                          onChange={(e) => updateItem('experiences', index, 'start', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        />
+                        <input
+                          type="text"
+                          placeholder="End Date"
+                          value={exp.end}
+                          onChange={(e) => updateItem('experiences', index, 'end', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        />
+                      </div>
+                      <textarea
+                        placeholder="Responsibilities & Achievements"
+                        value={exp.responsibilities}
+                        onChange={(e) => updateItem('experiences', index, 'responsibilities', e.target.value)}
+                        rows="4"
+                        className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      />
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => addItem('experiences')}
+                    className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-indigo-500 hover:text-indigo-600 flex items-center justify-center gap-2"
+                  >
+                    <Plus size={18} /> Add Experience
+                  </button>
+                </>
+              )}
+
+              {activeTab === 'education' && (
+                <>
+                  {formData.education.map((edu, index) => (
+                    <div key={index} className="p-4 border border-gray-200 rounded-lg space-y-3">
+                      <div className="flex justify-between items-center">
+                        <h3 className="font-semibold text-gray-700">Education {index + 1}</h3>
+                        <button
+                          onClick={() => removeItem('education', index)}
+                          className="text-red-500 hover:text-red-700"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Degree"
+                        value={edu.degree}
+                        onChange={(e) => updateItem('education', index, 'degree', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Institution"
+                        value={edu.institution}
+                        onChange={(e) => updateItem('education', index, 'institution', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Year"
+                        value={edu.year}
+                        onChange={(e) => updateItem('education', index, 'year', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      />
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => addItem('education')}
+                    className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-indigo-500 hover:text-indigo-600 flex items-center justify-center gap-2"
+                  >
+                    <Plus size={18} /> Add Education
+                  </button>
+                </>
+              )}
+
+              {activeTab === 'projects' && (
+                <>
+                  {formData.projects.map((proj, index) => (
+                    <div key={index} className="p-4 border border-gray-200 rounded-lg space-y-3">
+                      <div className="flex justify-between items-center">
+                        <h3 className="font-semibold text-gray-700">Project {index + 1}</h3>
+                        <button
+                          onClick={() => removeItem('projects', index)}
+                          className="text-red-500 hover:text-red-700"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Project Name"
+                        value={proj.name}
+                        onChange={(e) => updateItem('projects', index, 'name', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      />
+                      <textarea
+                        placeholder="Description"
+                        value={proj.description}
+                        onChange={(e) => updateItem('projects', index, 'description', e.target.value)}
+                        rows="3"
+                        className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Technologies Used"
+                        value={proj.technologies}
+                        onChange={(e) => updateItem('projects', index, 'technologies', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      />
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => addItem('projects')}
+                    className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-indigo-500 hover:text-indigo-600 flex items-center justify-center gap-2"
+                  >
+                    <Plus size={18} /> Add Project
+                  </button>
+                </>
+              )}
+            </div>
+
+            <button
+              onClick={generateResume}
+              disabled={isGenerating}
+              className="w-full mt-6 bg-indigo-600 text-white py-3 rounded-lg font-semibold hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
+            >
+              {isGenerating ? (
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <Sparkles size={20} />
+                  Generate AI Resume
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Right Panel - Generated Resume */}
+          <div className="bg-white rounded-xl shadow-lg p-6">
+            <h2 className="text-2xl font-bold text-gray-800 mb-4">Generated Resume</h2>
+            <div className="bg-gray-50 rounded-lg p-6 min-h-[600px] max-h-[700px] overflow-y-auto">
+              {generatedResume ? (
+                <pre className="whitespace-pre-wrap font-sans text-sm text-gray-800">
+                  {generatedResume}
+                </pre>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full text-center">
+                  <FileText size={64} className="text-gray-300 mb-4" />
+                  <p className="text-gray-500">Fill in your information and click "Generate AI Resume" to see your professional resume here.</p>
+                </div>
+              )}
+            </div>
+            {generatedResume && (
+              <button
+                onClick={() => {
+                  const blob = new Blob([generatedResume], { type: 'text/plain' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `${formData.name.replace(/\s+/g, '_')}_Resume.txt`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                className="w-full mt-4 bg-green-600 text-white py-2 rounded-lg font-semibold hover:bg-green-700 transition-colors"
+              >
+                Download Resume
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
