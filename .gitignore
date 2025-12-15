@@ -1,3 +1,22 @@
+notepad .gitignore
+```
+
+**Add this line at the top** (after the existing sensitive files section):
+```
+# Streamlit secrets
+.streamlit/secrets.toml
+```
+
+So the top of your file should look like:
+```
+# Sensitive API Keys and Credentials - NEVER UPLOAD
+serviceAccountKey.json
+*.json
+config.py
+# Streamlit secrets
+.streamlit/secrets.toml
+# Byte-compiled / optimized / DLL files__pycache__/
+...
 # Sensitive API Keys and Credentials - NEVER UPLOAD
 serviceAccountKey.json
 *.json
