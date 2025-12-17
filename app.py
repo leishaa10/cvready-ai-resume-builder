@@ -14,28 +14,74 @@ from reportlab.lib import colors
 from io import BytesIO
 
 # Page configuration
-st.set_page_config(
-    page_title="CVReady - AI Resume Builder",
-    page_icon="📄",
-    layout="wide"
-)
 st.markdown("""
     <style>
     .stApp {
         background: linear-gradient(135deg, #d4f1f4 0%, #b8e6e6 100%);
     }
+    
+    /* Sidebar styling */
     [data-testid="stSidebar"] {
         background-color: #e8f5f5;
     }
+    
+    /* Tab styling */
     .stTabs [data-baseweb="tab"] {
         background-color: #f0f9f9;
+        color: #1a1a1a;
+        font-weight: 600;
     }
     .stTabs [data-baseweb="tab"][aria-selected="true"] {
         background-color: #d4a574;
+        color: #ffffff;
+    }
+    
+    /* All text elements - make them dark and readable */
+    .stMarkdown, .stText, p, span, div, label {
+        color: #1a1a1a !important;
+    }
+    
+    /* Headers */
+    h1, h2, h3, h4, h5, h6 {
+        color: #0a3d3d !important;
+        font-weight: 700 !important;
+    }
+    
+    /* Input labels */
+    [data-testid="stWidgetLabel"] {
+        color: #0f4c4c !important;
+        font-weight: 600 !important;
+    }
+    
+    /* Text inputs */
+    input, textarea {
+        color: #1a1a1a !important;
+        background-color: #ffffff !important;
+    }
+    
+    /* Buttons */
+    .stButton > button {
+        background-color: #0a3d3d;
+        color: white;
+        font-weight: 600;
+        border: none;
+    }
+    .stButton > button:hover {
+        background-color: #165858;
+    }
+    
+    /* Info/Warning/Success boxes */
+    .stAlert {
+        color: #1a1a1a !important;
+    }
+    
+    /* Expander text */
+    .streamlit-expanderHeader {
+        color: #0a3d3d !important;
+        font-weight: 600 !important;
     }
     </style>
     """, unsafe_allow_html=True)
-
 # Firebase initialization
 @st.cache_resource
 def init_firebase():
@@ -602,6 +648,103 @@ with tab3:
         st.session_state.resume_data['projects'] = projects
         st.success("✅ Education and projects saved!")
 
-# Tab 4: Generate Resume (rest stays the same)
+# Tab 4: Generate Resume
 with tab4:
-    # ... keep your existing Generate Resume code ...
+    st.header("📄 Generate Your Resume")
+    
+    if not st.session_state.resume_data.get('basic_info'):
+        st.warning("⚠️ Please fill in your information in the previous tabs first!")
+    else:
+        st.success("✅ Ready to generate your resume!")
+        
+        with st.expander("👁️ Preview Your Data", expanded=False):
+            st.json(st.session_state.resume_data)
+        
+        st.markdown("---")
+        
+        if st.button("🤖 Generate Resume with AI", type="primary", use_container_width=True):
+            with st.spinner("✨ AI is crafting your professional resume..."):
+                generated_resume = generate_resume_with_gemini(st.session_state.resume_data)
+                
+                if generated_resume.startswith("Error:"):
+                    st.error(generated_resume)
+                else:
+                    st.session_state.generated_resume = generated_resume
+                    
+                    # Auto-save to Firebase if user email is provided
+                    if user_email:
+                        save_id = save_resume_to_firebase(db, st.session_state.resume_data, generated_resume, user_email)
+                        if save_id:
+                            st.success("✅ Resume generated and saved to Firebase!")
+                    else:
+                        st.success("✅ Resume generated successfully!")
+                    
+                    st.rerun()
+        
+        # Display generated resume
+        if 'generated_resume' in st.session_state and st.session_state.generated_resume:
+            st.markdown("---")
+            st.subheader("📝 Your AI-Generated Resume")
+            
+            st.markdown(st.session_state.generated_resume)
+            
+            st.markdown("---")
+            
+            # Template selection for PDF
+            st.subheader("📄 Download Your Resume")
+            
+            template_choice = st.selectbox(
+                "Choose PDF Template Style",
+                ["modern", "classic", "creative", "minimal"],
+                format_func=lambda x: {
+                    "modern": "🔵 Modern - Bold & Professional",
+                    "classic": "⚫ Classic - Traditional & Formal",
+                    "creative": "🟣 Creative - Unique & Colorful",
+                    "minimal": "⚪ Minimal - Clean & Simple"
+                }[x]
+            )
+            
+            template_descriptions = {
+                "modern": "Blue accents, bold headers, contemporary design",
+                "classic": "Black text, serif font, traditional business format",
+                "creative": "Purple theme, eye-catching, great for creative roles",
+                "minimal": "Simple gray tones, maximum readability, ATS-optimized"
+            }
+            st.info(f"ℹ️ {template_descriptions[template_choice]}")
+            
+            # Download buttons
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.download_button(
+                    label="📥 Download as Text",
+                    data=st.session_state.generated_resume,
+                    file_name=f"{st.session_state.resume_data.get('basic_info', {}).get('name', 'resume').replace(' ', '_')}_resume.txt",
+                    mime="text/plain",
+                    use_container_width=True
+                )
+            
+            with col2:
+                st.download_button(
+                    label="📥 Download as Markdown",
+                    data=st.session_state.generated_resume,
+                    file_name=f"{st.session_state.resume_data.get('basic_info', {}).get('name', 'resume').replace(' ', '_')}_resume.md",
+                    mime="text/markdown",
+                    use_container_width=True
+                )
+            
+            with col3:
+                pdf_buffer = create_professional_pdf(
+                    st.session_state.resume_data,
+                    st.session_state.generated_resume,
+                    template_choice
+                )
+                
+                st.download_button(
+                    label="📄 Download as PDF",
+                    data=pdf_buffer,
+                    file_name=f"{st.session_state.resume_data.get('basic_info', {}).get('name', 'resume').replace(' ', '_')}_resume.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                    type="primary"
+                )
