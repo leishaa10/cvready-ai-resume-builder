@@ -471,7 +471,7 @@ with st.sidebar:
     st.markdown("[Get Gemini API Key](https://makersuite.google.com/app/apikey)")
 
 # Create tabs
-tab1, tab2, tab3 = st.tabs(["📝 Basic Info", "💼 Experience", "📄 Generate Resume"])
+tab1, tab2, tab3, tab4 = st.tabs(["📝 Basic Info", "💼 Experience", "🎓 Education & Projects", "📄 Generate Resume"])
 
 # Tab 1: Basic Information
 with tab1:
@@ -524,7 +524,7 @@ with tab1:
         }
         st.success("✅ Basic information saved!")
 
-# Tab 2: Experience, Education, Projects
+# Tab 2: Work Experience ONLY
 with tab2:
     st.header("Work Experience")
     
@@ -556,8 +556,13 @@ with tab2:
                 'responsibilities': responsibilities
             })
     
-    st.markdown("---")
-    st.subheader("🎓 Education")
+    if st.button("💾 Save Work Experience", type="primary"):
+        st.session_state.resume_data['experience'] = experiences
+        st.success("✅ Work experience saved!")
+
+# Tab 3: Education & Projects
+with tab3:
+    st.header("🎓 Education")
     
     num_edu = st.number_input("How many education entries?", min_value=1, max_value=5, value=1)
     
@@ -592,109 +597,11 @@ with tab2:
                 'technologies': project_tech
             })
     
-    if st.button("💾 Save All Information", type="primary"):
-        st.session_state.resume_data['experience'] = experiences
+    if st.button("💾 Save Education & Projects", type="primary"):
         st.session_state.resume_data['education'] = education
         st.session_state.resume_data['projects'] = projects
-        st.success("✅ All information saved!")
+        st.success("✅ Education and projects saved!")
 
-# Tab 3: Generate Resume
-with tab3:
-    st.header("📄 Generate Your Resume")
-    
-    if not st.session_state.resume_data.get('basic_info'):
-        st.warning("⚠️ Please fill in your information in the previous tabs first!")
-    else:
-        st.success("✅ Ready to generate your resume!")
-        
-        with st.expander("👁️ Preview Your Data", expanded=False):
-            st.json(st.session_state.resume_data)
-        
-        st.markdown("---")
-        
-        if st.button("🤖 Generate Resume with AI", type="primary", use_container_width=True):
-            with st.spinner("✨ AI is crafting your professional resume..."):
-                generated_resume = generate_resume_with_gemini(st.session_state.resume_data)
-                
-                if generated_resume.startswith("Error:"):
-                    st.error(generated_resume)
-                else:
-                    st.session_state.generated_resume = generated_resume
-                    
-                    # Auto-save to Firebase if user email is provided
-                    if user_email:
-                        save_id = save_resume_to_firebase(db, st.session_state.resume_data, generated_resume, user_email)
-                        if save_id:
-                            st.success("✅ Resume generated and saved to Firebase!")
-                    else:
-                        st.success("✅ Resume generated successfully!")
-                    
-                    st.rerun()
-        
-        # Display generated resume
-        if 'generated_resume' in st.session_state and st.session_state.generated_resume:
-            st.markdown("---")
-            st.subheader("📝 Your AI-Generated Resume")
-            
-            st.markdown(st.session_state.generated_resume)
-            
-            st.markdown("---")
-            
-            # Template selection for PDF
-            st.subheader("📄 Download Your Resume")
-            
-            template_choice = st.selectbox(
-                "Choose PDF Template Style",
-                ["modern", "classic", "creative", "minimal"],
-                format_func=lambda x: {
-                    "modern": "🔵 Modern - Bold & Professional",
-                    "classic": "⚫ Classic - Traditional & Formal",
-                    "creative": "🟣 Creative - Unique & Colorful",
-                    "minimal": "⚪ Minimal - Clean & Simple"
-                }[x]
-            )
-            
-            template_descriptions = {
-                "modern": "Blue accents, bold headers, contemporary design",
-                "classic": "Black text, serif font, traditional business format",
-                "creative": "Purple theme, eye-catching, great for creative roles",
-                "minimal": "Simple gray tones, maximum readability, ATS-optimized"
-            }
-            st.info(f"ℹ️ {template_descriptions[template_choice]}")
-            
-            # Download buttons
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.download_button(
-                    label="📥 Download as Text",
-                    data=st.session_state.generated_resume,
-                    file_name=f"{st.session_state.resume_data.get('basic_info', {}).get('name', 'resume').replace(' ', '_')}_resume.txt",
-                    mime="text/plain",
-                    use_container_width=True
-                )
-            
-            with col2:
-                st.download_button(
-                    label="📥 Download as Markdown",
-                    data=st.session_state.generated_resume,
-                    file_name=f"{st.session_state.resume_data.get('basic_info', {}).get('name', 'resume').replace(' ', '_')}_resume.md",
-                    mime="text/markdown",
-                    use_container_width=True
-                )
-            
-            with col3:
-                pdf_buffer = create_professional_pdf(
-                    st.session_state.resume_data,
-                    st.session_state.generated_resume,
-                    template_choice
-                )
-                
-                st.download_button(
-                    label="📄 Download as PDF",
-                    data=pdf_buffer,
-                    file_name=f"{st.session_state.resume_data.get('basic_info', {}).get('name', 'resume').replace(' ', '_')}_resume.pdf",
-                    mime="application/pdf",
-                    use_container_width=True,
-                    type="primary"
-                )
+# Tab 4: Generate Resume (rest stays the same)
+with tab4:
+    # ... keep your existing Generate Resume code ...
