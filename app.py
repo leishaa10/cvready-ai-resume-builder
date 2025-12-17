@@ -1,4 +1,5 @@
 import streamlit as st
+api_key = st.secrets["GEMINI_API_KEY"]
 import google.generativeai as genai
 import firebase_admin
 from firebase_admin import credentials, firestore
@@ -18,6 +19,22 @@ st.set_page_config(
     page_icon="📄",
     layout="wide"
 )
+st.markdown("""
+    <style>
+    .stApp {
+        background: linear-gradient(135deg, #d4f1f4 0%, #b8e6e6 100%);
+    }
+    [data-testid="stSidebar"] {
+        background-color: #e8f5f5;
+    }
+    .stTabs [data-baseweb="tab"] {
+        background-color: #f0f9f9;
+    }
+    .stTabs [data-baseweb="tab"][aria-selected="true"] {
+        background-color: #d4a574;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
 # Firebase initialization
 @st.cache_resource

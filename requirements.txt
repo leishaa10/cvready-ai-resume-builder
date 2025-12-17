@@ -1,4 +1,10 @@
+<<<<<<< HEAD
 streamlit
 google-generativeai
 reportlab
 firebase-admin
+=======
+streamlit>=1.28.0
+google-generativeai>=0.3.0
+fpdf2>=2.7.0
+>>>>>>> cf463cc55301e522488907d1c285227d16074d8e
