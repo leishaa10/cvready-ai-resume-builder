@@ -1,5 +1,13 @@
-streamlit>=1.28.0
-google-generativeai>=0.3.0
-fpdf2>=2.7.0
-reportlab
+streamlit
+google-genai
 firebase-admin
+reportlab
+```
+
+#### 2. **`.gitignore`** (to avoid uploading secrets):
+```
+serviceAccountKey.json
+.env
+__pycache__/
+*.pyc
+.streamlit/secrets.toml

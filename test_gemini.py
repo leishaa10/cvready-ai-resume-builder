@@ -1,6 +1,6 @@
 import google.generativeai as genai
 
-api_key = "AIzaSyCq_hIUikHej8Vr91LZG32wrWepi-Omumw"
+api_key = "AIzaSyAlj5hmqkUSKyqyxxyq7cAL9tYeitoQahQ"
 genai.configure(api_key=api_key)
 
 print("Testing different Gemini models...\n")

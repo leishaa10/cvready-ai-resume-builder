@@ -1,6 +1,6 @@
 import streamlit as st
-api_key = st.secrets["GEMINI_API_KEY"]
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import firebase_admin
 from firebase_admin import credentials, firestore
 from datetime import datetime
@@ -13,19 +13,22 @@ from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_JUSTIFY
 from reportlab.lib import colors
 from io import BytesIO
 
-# Page configuration
+# Page configuration - MUST BE FIRST
+st.set_page_config(
+    page_title="CVReady - AI Resume Builder",
+    page_icon="📄",
+    layout="wide"
+)
+
+# Custom CSS
 st.markdown("""
     <style>
     .stApp {
         background: linear-gradient(135deg, #d4f1f4 0%, #b8e6e6 100%);
     }
-    
-    /* Sidebar styling */
     [data-testid="stSidebar"] {
         background-color: #e8f5f5;
     }
-    
-    /* Tab styling */
     .stTabs [data-baseweb="tab"] {
         background-color: #f0f9f9;
         color: #1a1a1a;
@@ -35,31 +38,21 @@ st.markdown("""
         background-color: #d4a574;
         color: #ffffff;
     }
-    
-    /* All text elements - make them dark and readable */
     .stMarkdown, .stText, p, span, div, label {
         color: #1a1a1a !important;
     }
-    
-    /* Headers */
     h1, h2, h3, h4, h5, h6 {
         color: #0a3d3d !important;
         font-weight: 700 !important;
     }
-    
-    /* Input labels */
     [data-testid="stWidgetLabel"] {
         color: #0f4c4c !important;
         font-weight: 600 !important;
     }
-    
-    /* Text inputs */
     input, textarea {
         color: #1a1a1a !important;
         background-color: #ffffff !important;
     }
-    
-    /* Buttons */
     .stButton > button {
         background-color: #0a3d3d;
         color: white;
@@ -69,19 +62,16 @@ st.markdown("""
     .stButton > button:hover {
         background-color: #165858;
     }
-    
-    /* Info/Warning/Success boxes */
     .stAlert {
         color: #1a1a1a !important;
     }
-    
-    /* Expander text */
     .streamlit-expanderHeader {
         color: #0a3d3d !important;
         font-weight: 600 !important;
     }
     </style>
     """, unsafe_allow_html=True)
+
 # Firebase initialization
 @st.cache_resource
 def init_firebase():
@@ -89,22 +79,39 @@ def init_firebase():
     try:
         firebase_admin.get_app()
     except ValueError:
-        # Try to load from Streamlit secrets first
-        if "firebase" in st.secrets:
-            cred = credentials.Certificate(dict(st.secrets["firebase"]))
-        else:
-            # Fallback to local file for development
-            cred = credentials.Certificate('serviceAccountKey.json')
-        
-        firebase_admin.initialize_app(cred)
+        try:
+            if "firebase" in st.secrets:
+                cred = credentials.Certificate(dict(st.secrets["firebase"]))
+            else:
+                cred = credentials.Certificate('serviceAccountKey.json')
+            firebase_admin.initialize_app(cred)
+        except Exception as e:
+            st.error(f"Firebase initialization error: {str(e)}")
+            return None
     return firestore.client()
 
 # Initialize Firebase
 db = init_firebase()
 
+# Initialize Gemini Client
+@st.cache_resource
+def get_gemini_client():
+    """Initialize and cache Gemini client"""
+    try:
+        api_key = st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
+        if api_key:
+            return genai.Client(api_key=api_key)
+        return None
+    except Exception as e:
+        st.error(f"Error initializing Gemini client: {str(e)}")
+        return None
+
 # Firebase helper functions
 def save_resume_to_firebase(db, resume_data, generated_resume, user_email):
     """Save resume to Firestore"""
+    if not db:
+        st.warning("Firebase not initialized. Resume not saved.")
+        return None
     try:
         doc_ref = db.collection('resumes').add({
             'user_email': user_email,
@@ -119,6 +126,8 @@ def save_resume_to_firebase(db, resume_data, generated_resume, user_email):
 
 def load_user_resumes(db, user_email):
     """Load all resumes for a user"""
+    if not db:
+        return []
     try:
         resumes = []
         docs = db.collection('resumes')\
@@ -139,6 +148,8 @@ def load_user_resumes(db, user_email):
 
 def delete_resume_from_firebase(db, doc_id):
     """Delete resume from Firestore"""
+    if not db:
+        return False
     try:
         db.collection('resumes').document(doc_id).delete()
         return True
@@ -204,38 +215,66 @@ Format in clean, readable markdown."""
     
     return prompt
 
-def generate_resume_with_gemini(resume_data: dict) -> str:
-    """Generate resume using Gemini AI"""
+def generate_resume_with_gemini(resume_data: dict, client) -> str:
+    """Generate resume using Gemini with new API"""
     try:
-        # Get API key from secrets or environment variable
-        api_key = st.secrets.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY"))
+        if not client:
+            return "Error: Gemini client not initialized. Please configure your API key."
         
-        if not api_key:
-            return "Error: Gemini API key not found. Please configure it in Streamlit secrets."
-        
-        # Configure Gemini
-        genai.configure(api_key=api_key)
-        
-        # Build the prompt first
+        # Build the prompt
         prompt = build_resume_prompt(resume_data)
         
-        # Use the correct model name
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        response = model.generate_content(prompt)
+        # Generate content with new API
+        response = client.models.generate_content(
+            model='gemini-2.0-flash-exp',  # Using Gemini 2.0 Flash (most recent available)
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.7,
+                top_p=0.95,
+                top_k=40,
+                max_output_tokens=8192,
+                safety_settings=[
+                    types.SafetySetting(
+                        category='HARM_CATEGORY_HATE_SPEECH',
+                        threshold='BLOCK_NONE'
+                    ),
+                    types.SafetySetting(
+                        category='HARM_CATEGORY_HARASSMENT',
+                        threshold='BLOCK_NONE'
+                    ),
+                    types.SafetySetting(
+                        category='HARM_CATEGORY_SEXUALLY_EXPLICIT',
+                        threshold='BLOCK_NONE'
+                    ),
+                    types.SafetySetting(
+                        category='HARM_CATEGORY_DANGEROUS_CONTENT',
+                        threshold='BLOCK_NONE'
+                    )
+                ]
+            )
+        )
         
-        if response and response.text:
+        # Extract text from response
+        if hasattr(response, 'text') and response.text:
             return response.text
-        
-        return "Error: No response generated"
+        else:
+            return "Error: No response generated. Content may have been filtered."
         
     except Exception as e:
         error_msg = str(e)
-        if "API_KEY_INVALID" in error_msg or "API key" in error_msg:
-            return "Error: Invalid API key. Please verify your Gemini API key is correct."
-        elif "quota" in error_msg.lower() or "429" in error_msg:
-            return "Error: API quota exceeded. Please try again later or check your API limits."
-        elif "403" in error_msg:
-            return "Error: API access forbidden. Your API key may not have Gemini access enabled."
+        
+        if "API_KEY_INVALID" in error_msg or "invalid api key" in error_msg.lower():
+            return "Error: Invalid API key. Please verify your Gemini API key."
+        elif "quota" in error_msg.lower() or "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
+            return "Error: API quota exceeded. Please try again later."
+        elif "403" in error_msg or "permission" in error_msg.lower():
+            return "Error: API access forbidden. Ensure Gemini API is enabled."
+        elif "404" in error_msg or "not found" in error_msg.lower():
+            return "Error: Model not found. Please check if the model is available."
+        elif "blocked" in error_msg.lower() or "safety" in error_msg.lower():
+            return "Error: Content was blocked by safety filters."
+        elif "timeout" in error_msg.lower() or "deadline" in error_msg.lower():
+            return "Error: Request timed out. Please try again."
         else:
             return f"Error: {error_msg}"
 
@@ -251,113 +290,59 @@ def create_professional_pdf(resume_data, generated_resume, template_style="moder
     # Custom styles based on template
     if template_style == "modern":
         title_style = ParagraphStyle(
-            'CustomTitle',
-            parent=styles['Heading1'],
-            fontSize=24,
-            textColor=colors.HexColor('#2563eb'),
-            spaceAfter=6,
-            alignment=TA_CENTER,
-            fontName='Helvetica-Bold'
+            'CustomTitle', parent=styles['Heading1'], fontSize=24,
+            textColor=colors.HexColor('#2563eb'), spaceAfter=6,
+            alignment=TA_CENTER, fontName='Helvetica-Bold'
         )
-        
         heading_style = ParagraphStyle(
-            'CustomHeading',
-            parent=styles['Heading2'],
-            fontSize=14,
-            textColor=colors.HexColor('#1e40af'),
-            spaceAfter=6,
-            spaceBefore=12,
-            fontName='Helvetica-Bold',
-            borderColor=colors.HexColor('#2563eb'),
-            borderWidth=2,
-            borderPadding=5
+            'CustomHeading', parent=styles['Heading2'], fontSize=14,
+            textColor=colors.HexColor('#1e40af'), spaceAfter=6, spaceBefore=12,
+            fontName='Helvetica-Bold', borderColor=colors.HexColor('#2563eb'),
+            borderWidth=2, borderPadding=5
         )
-        
     elif template_style == "classic":
         title_style = ParagraphStyle(
-            'CustomTitle',
-            parent=styles['Heading1'],
-            fontSize=22,
-            textColor=colors.black,
-            spaceAfter=6,
-            alignment=TA_CENTER,
-            fontName='Times-Bold'
+            'CustomTitle', parent=styles['Heading1'], fontSize=22,
+            textColor=colors.black, spaceAfter=6,
+            alignment=TA_CENTER, fontName='Times-Bold'
         )
-        
         heading_style = ParagraphStyle(
-            'CustomHeading',
-            parent=styles['Heading2'],
-            fontSize=13,
-            textColor=colors.black,
-            spaceAfter=6,
-            spaceBefore=12,
-            fontName='Times-Bold',
-            borderColor=colors.black,
-            borderWidth=1,
-            borderPadding=3
+            'CustomHeading', parent=styles['Heading2'], fontSize=13,
+            textColor=colors.black, spaceAfter=6, spaceBefore=12,
+            fontName='Times-Bold', borderColor=colors.black,
+            borderWidth=1, borderPadding=3
         )
-        
     elif template_style == "creative":
         title_style = ParagraphStyle(
-            'CustomTitle',
-            parent=styles['Heading1'],
-            fontSize=26,
-            textColor=colors.HexColor('#7c3aed'),
-            spaceAfter=6,
-            alignment=TA_CENTER,
-            fontName='Helvetica-Bold'
+            'CustomTitle', parent=styles['Heading1'], fontSize=26,
+            textColor=colors.HexColor('#7c3aed'), spaceAfter=6,
+            alignment=TA_CENTER, fontName='Helvetica-Bold'
         )
-        
         heading_style = ParagraphStyle(
-            'CustomHeading',
-            parent=styles['Heading2'],
-            fontSize=14,
-            textColor=colors.HexColor('#7c3aed'),
-            spaceAfter=6,
-            spaceBefore=12,
-            fontName='Helvetica-Bold',
-            borderColor=colors.HexColor('#a78bfa'),
-            borderWidth=2,
-            borderPadding=5
+            'CustomHeading', parent=styles['Heading2'], fontSize=14,
+            textColor=colors.HexColor('#7c3aed'), spaceAfter=6, spaceBefore=12,
+            fontName='Helvetica-Bold', borderColor=colors.HexColor('#a78bfa'),
+            borderWidth=2, borderPadding=5
         )
-        
     else:  # minimal
         title_style = ParagraphStyle(
-            'CustomTitle',
-            parent=styles['Heading1'],
-            fontSize=20,
-            textColor=colors.HexColor('#374151'),
-            spaceAfter=6,
-            alignment=TA_LEFT,
-            fontName='Helvetica-Bold'
+            'CustomTitle', parent=styles['Heading1'], fontSize=20,
+            textColor=colors.HexColor('#374151'), spaceAfter=6,
+            alignment=TA_LEFT, fontName='Helvetica-Bold'
         )
-        
         heading_style = ParagraphStyle(
-            'CustomHeading',
-            parent=styles['Heading2'],
-            fontSize=12,
-            textColor=colors.HexColor('#374151'),
-            spaceAfter=6,
-            spaceBefore=12,
+            'CustomHeading', parent=styles['Heading2'], fontSize=12,
+            textColor=colors.HexColor('#374151'), spaceAfter=6, spaceBefore=12,
             fontName='Helvetica-Bold'
         )
     
     contact_style = ParagraphStyle(
-        'ContactStyle',
-        parent=styles['Normal'],
-        fontSize=10,
-        textColor=colors.HexColor('#6b7280'),
-        alignment=TA_CENTER,
-        spaceAfter=12
+        'ContactStyle', parent=styles['Normal'], fontSize=10,
+        textColor=colors.HexColor('#6b7280'), alignment=TA_CENTER, spaceAfter=12
     )
-    
     body_style = ParagraphStyle(
-        'BodyStyle',
-        parent=styles['Normal'],
-        fontSize=10,
-        textColor=colors.black,
-        spaceAfter=6,
-        alignment=TA_JUSTIFY
+        'BodyStyle', parent=styles['Normal'], fontSize=10,
+        textColor=colors.black, spaceAfter=6, alignment=TA_JUSTIFY
     )
     
     # Get data
@@ -408,7 +393,8 @@ def create_professional_pdf(resume_data, generated_resume, template_style="moder
                 elements.append(Paragraph(job_header, body_style))
                 
                 duration = f"{exp.get('start', '')} - {exp.get('end', '')}"
-                duration_style = ParagraphStyle('Duration', parent=body_style, textColor=colors.HexColor('#6b7280'), fontSize=9)
+                duration_style = ParagraphStyle('Duration', parent=body_style, 
+                    textColor=colors.HexColor('#6b7280'), fontSize=9)
                 elements.append(Paragraph(duration, duration_style))
                 
                 if exp.get('responsibilities'):
@@ -422,7 +408,6 @@ def create_professional_pdf(resume_data, generated_resume, template_style="moder
     # Education
     if education and any(edu.get('degree') for edu in education):
         elements.append(Paragraph("EDUCATION", heading_style))
-        
         for edu in education:
             if edu.get('degree'):
                 edu_text = f"<b>{edu['degree']}</b> | {edu.get('institution', '')} | {edu.get('year', '')}"
@@ -432,7 +417,6 @@ def create_professional_pdf(resume_data, generated_resume, template_style="moder
     # Projects
     if projects and any(proj.get('name') for proj in projects):
         elements.append(Paragraph("PROJECTS", heading_style))
-        
         for proj in projects:
             if proj.get('name'):
                 proj_header = f"<b>{proj['name']}</b>"
@@ -442,7 +426,8 @@ def create_professional_pdf(resume_data, generated_resume, template_style="moder
                     elements.append(Paragraph(proj['description'], body_style))
                 
                 if proj.get('technologies'):
-                    tech_style = ParagraphStyle('Tech', parent=body_style, textColor=colors.HexColor('#6b7280'), fontSize=9)
+                    tech_style = ParagraphStyle('Tech', parent=body_style, 
+                        textColor=colors.HexColor('#6b7280'), fontSize=9)
                     elements.append(Paragraph(f"<i>Technologies: {proj['technologies']}</i>", tech_style))
                 
                 elements.append(Spacer(1, 0.1*inch))
@@ -454,38 +439,39 @@ def create_professional_pdf(resume_data, generated_resume, template_style="moder
 # Initialize session state
 if 'resume_data' not in st.session_state:
     st.session_state.resume_data = {}
+if 'generated_resume' not in st.session_state:
+    st.session_state.generated_resume = None
+
+# Initialize Gemini client
+gemini_client = get_gemini_client()
 
 # Title
 st.title("📄 CVReady")
 st.markdown("### Your AI-Powered Resume Builder")
-st.markdown("*Powered by Google Gemini & Firebase | TechSprint AI Hack '25*")
+st.markdown("*Powered by Google Gemini 2.0 & Firebase*")
 
 # Sidebar
 with st.sidebar:
     st.header("⚙️ Settings")
     
-    # Check if API key is configured in secrets
-    try:
-        api_key = st.secrets.get("GEMINI_API_KEY", "")
-        if api_key:
-            st.success("✅ AI Features Enabled")
-        else:
-            st.warning("⚠️ API Key not configured in secrets")
-            st.info("For deployment: Add GEMINI_API_KEY to Streamlit secrets")
-            api_key = st.text_input("Enter Gemini API Key (for local testing)", type="password")
-    except:
-        st.info("💡 Running in local mode")
-        api_key = st.text_input("Enter Gemini API Key", type="password")
+    # API Key Status
+    if gemini_client:
+        st.success("✅ AI Features Enabled")
+    else:
+        st.warning("⚠️ API Key not configured")
+        api_key_input = st.text_input("Enter Gemini API Key", type="password")
+        if api_key_input:
+            os.environ["GEMINI_API_KEY"] = api_key_input
+            st.rerun()
     
     st.markdown("---")
     
     # User Email
     user_email = st.text_input("Your Email (for saving)", placeholder="user@example.com")
     
-    if user_email:
+    if user_email and db:
         st.success(f"✅ Logged in as: {user_email}")
         
-        # Saved Resumes
         st.markdown("---")
         st.subheader("💾 Your Saved Resumes")
         
@@ -514,7 +500,8 @@ with st.sidebar:
             st.info("No saved resumes yet")
     
     st.markdown("---")
-    st.markdown("[Get Gemini API Key](https://makersuite.google.com/app/apikey)")
+    st.markdown("🔑 [Get Gemini API Key](https://aistudio.google.com/app/apikey)")
+    st.markdown("📖 [View Documentation](https://github.com/yourusername/cvready)")
 
 # Create tabs
 tab1, tab2, tab3, tab4 = st.tabs(["📝 Basic Info", "💼 Experience", "🎓 Education & Projects", "📄 Generate Resume"])
@@ -559,18 +546,13 @@ with tab1:
     
     if st.button("💾 Save Basic Info", type="primary"):
         st.session_state.resume_data['basic_info'] = {
-            'name': name,
-            'email': email,
-            'phone': phone,
-            'location': location,
-            'linkedin': linkedin,
-            'job_title': job_title,
-            'skills': skills,
-            'summary': professional_summary
+            'name': name, 'email': email, 'phone': phone,
+            'location': location, 'linkedin': linkedin, 'job_title': job_title,
+            'skills': skills, 'summary': professional_summary
         }
         st.success("✅ Basic information saved!")
 
-# Tab 2: Work Experience ONLY
+# Tab 2: Work Experience
 with tab2:
     st.header("Work Experience")
     
@@ -595,10 +577,8 @@ with tab2:
             )
             
             experiences.append({
-                'title': job_title_input,
-                'company': company,
-                'start': start_date,
-                'end': end_date,
+                'title': job_title_input, 'company': company,
+                'start': start_date, 'end': end_date,
                 'responsibilities': responsibilities
             })
     
@@ -620,9 +600,7 @@ with tab3:
             edu_year = st.text_input(f"Year", placeholder="2020", key=f"edu_year_{i}")
             
             education.append({
-                'degree': degree,
-                'institution': institution,
-                'year': edu_year
+                'degree': degree, 'institution': institution, 'year': edu_year
             })
     
     st.markdown("---")
@@ -638,8 +616,7 @@ with tab3:
             project_tech = st.text_input(f"Technologies Used", placeholder="React, Node.js, MongoDB", key=f"project_tech_{i}")
             
             projects.append({
-                'name': project_name,
-                'description': project_desc,
+                'name': project_name, 'description': project_desc,
                 'technologies': project_tech
             })
     
@@ -664,7 +641,7 @@ with tab4:
         
         if st.button("🤖 Generate Resume with AI", type="primary", use_container_width=True):
             with st.spinner("✨ AI is crafting your professional resume..."):
-                generated_resume = generate_resume_with_gemini(st.session_state.resume_data)
+                generated_resume = generate_resume_with_gemini(st.session_state.resume_data, gemini_client)
                 
                 if generated_resume.startswith("Error:"):
                     st.error(generated_resume)
@@ -672,8 +649,9 @@ with tab4:
                     st.session_state.generated_resume = generated_resume
                     
                     # Auto-save to Firebase if user email is provided
-                    if user_email:
-                        save_id = save_resume_to_firebase(db, st.session_state.resume_data, generated_resume, user_email)
+                    if user_email and db:
+                        save_id = save_resume_to_firebase(db, st.session_state.resume_data, 
+                                                         generated_resume, user_email)
                         if save_id:
                             st.success("✅ Resume generated and saved to Firebase!")
                     else:
@@ -682,15 +660,13 @@ with tab4:
                     st.rerun()
         
         # Display generated resume
-        if 'generated_resume' in st.session_state and st.session_state.generated_resume:
+        if st.session_state.generated_resume:
             st.markdown("---")
             st.subheader("📝 Your AI-Generated Resume")
             
             st.markdown(st.session_state.generated_resume)
             
             st.markdown("---")
-            
-            # Template selection for PDF
             st.subheader("📄 Download Your Resume")
             
             template_choice = st.selectbox(
@@ -704,15 +680,6 @@ with tab4:
                 }[x]
             )
             
-            template_descriptions = {
-                "modern": "Blue accents, bold headers, contemporary design",
-                "classic": "Black text, serif font, traditional business format",
-                "creative": "Purple theme, eye-catching, great for creative roles",
-                "minimal": "Simple gray tones, maximum readability, ATS-optimized"
-            }
-            st.info(f"ℹ️ {template_descriptions[template_choice]}")
-            
-            # Download buttons
             col1, col2, col3 = st.columns(3)
             
             with col1:
